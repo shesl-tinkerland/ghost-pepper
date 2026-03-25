@@ -286,11 +286,9 @@ class AppState: ObservableObject {
         }
 
         if !inputMonitoringChecker() {
+            // Try to prompt, but don't block — Accessibility alone may be sufficient
             inputMonitoringPrompter()
-            errorMessage = "Input Monitoring access required — grant permission then click Retry"
-            status = .error
-            debugLogStore.record(category: .hotkey, message: errorMessage ?? "Input Monitoring access required.")
-            return
+            debugLogStore.record(category: .hotkey, message: "Input Monitoring not granted, attempting to start with Accessibility only.")
         }
 
         if hotkeyMonitor.start() {
