@@ -38,7 +38,9 @@ class RecordingOverlayController {
         hosting.frame = container.bounds
         hosting.autoresizingMask = [.width, .height]
         container.addSubview(hosting)
-        panel.contentView = container
+        let contentViewController = NSViewController()
+        contentViewController.view = container
+        panel.contentViewController = contentViewController
         self.hostingView = hosting
 
         if let screen = NSScreen.main {
