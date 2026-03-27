@@ -46,8 +46,8 @@ final class AudioRecorderTests: XCTestCase {
             deliveredChunks.append(chunk)
         }
 
-        recorder.appendConvertedFrames([0.1, 0.2])
-        recorder.appendConvertedFrames([0.3, 0.4])
+        recorder.test_convert(samples: [0.1, 0.2])
+        recorder.test_convert(samples: [0.3, 0.4])
 
         XCTAssertEqual(deliveredChunks, [[0.1, 0.2], [0.3, 0.4]])
     }
@@ -59,8 +59,8 @@ final class AudioRecorderTests: XCTestCase {
             deliveredSamples.append(contentsOf: chunk)
         }
 
-        recorder.appendConvertedFrames([0.1, 0.2])
-        recorder.appendConvertedFrames([0.3, 0.4])
+        recorder.test_convert(samples: [0.1, 0.2])
+        recorder.test_convert(samples: [0.3, 0.4])
 
         XCTAssertEqual(deliveredSamples, [0.1, 0.2, 0.3, 0.4])
         XCTAssertEqual(recorder.audioBuffer, [0.1, 0.2, 0.3, 0.4])

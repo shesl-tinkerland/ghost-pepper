@@ -179,7 +179,31 @@ final class AudioRecorder {
         appendConvertedFrames(frames)
     }
 
-    func appendConvertedFrames(_ frames: [Float]) {
+    #if DEBUG
+    func test_convert(samples: [Float]) {
+        let inputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetFormat.sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
+        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat),
+              let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(samples.count)) else {
+            return
+        }
+
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        if let channelData = buffer.floatChannelData?.pointee {
+            for (index, sample) in samples.enumerated() {
+                channelData[index] = sample
+            }
+        }
+
+        convert(buffer: buffer, using: converter)
+    }
+    #endif
+
+    private func appendConvertedFrames(_ frames: [Float]) {
         bufferLock.lock()
         audioBuffer.append(contentsOf: frames)
         bufferLock.unlock()
