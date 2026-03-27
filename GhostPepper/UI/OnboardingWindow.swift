@@ -212,7 +212,8 @@ struct SetupStep: View {
             speechModelState: modelManager.state,
             cachedSpeechModelNames: modelManager.cachedModelNames,
             cleanupState: appState.textCleanupManager.state,
-            loadedCleanupKinds: appState.textCleanupManager.loadedModelKinds
+            selectedCleanupModelKind: appState.textCleanupManager.selectedCleanupModelKind,
+            cachedCleanupKinds: appState.textCleanupManager.cachedModelKinds
         )
     }
 

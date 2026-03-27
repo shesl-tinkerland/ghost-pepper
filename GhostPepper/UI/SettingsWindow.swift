@@ -160,7 +160,7 @@ struct SettingsView: View {
         _transcriptionLabController = StateObject(
             wrappedValue: TranscriptionLabController(
                 defaultSpeechModelID: appState.speechModel,
-                defaultCleanupModelKind: appState.textCleanupManager.localModelPolicy == .fastOnly ? .fast : .full,
+                defaultCleanupModelKind: appState.textCleanupManager.selectedCleanupModelKind,
                 loadStageTimings: {
                     try appState.loadTranscriptionLabStageTimings()
                 },
@@ -196,7 +196,8 @@ struct SettingsView: View {
             speechModelState: appState.modelManager.state,
             cachedSpeechModelNames: appState.modelManager.cachedModelNames,
             cleanupState: appState.textCleanupManager.state,
-            loadedCleanupKinds: appState.textCleanupManager.loadedModelKinds
+            selectedCleanupModelKind: appState.textCleanupManager.selectedCleanupModelKind,
+            cachedCleanupKinds: appState.textCleanupManager.cachedModelKinds
         )
     }
 
@@ -339,8 +340,8 @@ struct SettingsView: View {
             await appState.modelManager.loadModel(name: selectedSpeechModelName)
         }
 
-        if appState.textCleanupManager.loadedModelKinds.count < TextCleanupManager.cleanupModels.count {
-            await appState.textCleanupManager.loadModel()
+        if appState.textCleanupManager.cachedModelKinds.count < TextCleanupManager.cleanupModels.count {
+            await appState.textCleanupManager.downloadMissingModels()
         }
     }
 
@@ -667,19 +668,24 @@ struct SettingsView: View {
                     Picker(
                         "Cleanup model",
                         selection: Binding(
-                            get: { appState.textCleanupManager.localModelPolicy },
-                            set: { appState.textCleanupManager.localModelPolicy = $0 }
+                            get: { appState.textCleanupManager.selectedCleanupModelKind },
+                            set: { appState.textCleanupManager.selectedCleanupModelKind = $0 }
                         )
                     ) {
-                        ForEach(LocalCleanupModelPolicy.allCases) { policy in
-                            Text(policy.title).tag(policy)
+                        ForEach(TextCleanupManager.cleanupModels, id: \.kind) { model in
+                            Text(model.displayName).tag(model.kind)
                         }
                     }
                     .labelsHidden()
                     .frame(maxWidth: 360, alignment: .leading)
+                    .onChange(of: appState.textCleanupManager.selectedCleanupModelKind) { _, _ in
+                        Task {
+                            await appState.textCleanupManager.loadModel()
+                        }
+                    }
                 }
 
-                Text("Use Qwen 3.5 2B for faster cleanup or Qwen 3.5 4B for the highest-quality cleanup.")
+                Text("Recommended defaults are marked Fast and Full. The other Qwen variants are available for cleanup experiments and lower-memory use.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -942,8 +948,9 @@ struct SettingsView: View {
                         .font(.subheadline.weight(.medium))
 
                     Picker("Cleanup model", selection: $transcriptionLabController.selectedCleanupModelKind) {
-                        Text(TextCleanupManager.fastModel.displayName).tag(LocalCleanupModelKind.fast)
-                        Text(TextCleanupManager.fullModel.displayName).tag(LocalCleanupModelKind.full)
+                        ForEach(TextCleanupManager.cleanupModels, id: \.kind) { model in
+                            Text(model.displayName).tag(model.kind)
+                        }
                     }
                     .labelsHidden()
                     .frame(maxWidth: 300, alignment: .leading)

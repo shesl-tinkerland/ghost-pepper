@@ -864,8 +864,9 @@ final class GhostPepperTests: XCTestCase {
         correctionStore.commonlyMisheardText = "just see -> Jesse"
         let cleanupManager = TextCleanupManager(
             defaults: defaults,
-            fastModelAvailabilityOverride: false,
-            fullModelAvailabilityOverride: false
+            cleanupModelAvailabilityOverrides: Dictionary(
+                uniqueKeysWithValues: LocalCleanupModelKind.allCases.map { ($0, false) }
+            )
         )
         let appState = AppState(
             hotkeyMonitor: FakeHotkeyMonitor(),

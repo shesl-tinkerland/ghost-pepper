@@ -60,7 +60,7 @@ final class TranscriptionLabController: ObservableObject {
 
     init(
         defaultSpeechModelID: String,
-        defaultCleanupModelKind: LocalCleanupModelKind = .full,
+        defaultCleanupModelKind: LocalCleanupModelKind = .qwen35_4b_q4_k_m,
         loadStageTimings: @escaping StageTimingsLoader = { [:] },
         loadEntries: @escaping EntryLoader,
         audioURLForEntry: @escaping AudioURLProvider,
@@ -299,10 +299,6 @@ final class TranscriptionLabController: ObservableObject {
     }
 
     private static func cleanupModelKind(for entry: TranscriptionLabEntry) -> LocalCleanupModelKind {
-        if entry.cleanupModelName.contains("1.7B") {
-            return .fast
-        }
-
-        return .full
+        TextCleanupManager.cleanupModelKind(matchingArchivedName: entry.cleanupModelName)
     }
 }

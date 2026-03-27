@@ -29,7 +29,7 @@ enum CleanupModelProbeCLIError: Error, LocalizedError, Equatable {
         case .unknownFlag(let flag):
             return "Unknown flag \(flag)."
         case .invalidModel(let value):
-            return "Unsupported model '\(value)'. Use 'fast' or 'full'."
+            return "Unsupported model '\(value)'."
         case .invalidThinkingMode(let value):
             return "Unsupported thinking mode '\(value)'. Use 'none', 'suppressed', or 'enabled'."
         case .duplicateWindowContextSource:
@@ -188,7 +188,7 @@ enum CleanupModelProbeCLI {
     static var usage: String {
         """
         Usage:
-          CleanupModelProbe --model fast|full [--input <text>] [--prompt <text>] [--window-context <text> | --window-context-file <path>] [--thinking none|suppressed|enabled]
+          CleanupModelProbe --model fast|full|qwen35_0_8b_q4_k_m|qwen35_2b_q4_k_s|qwen35_2b_q4_k_m|qwen35_4b_q4_k_m [--input <text>] [--prompt <text>] [--window-context <text> | --window-context-file <path>] [--thinking none|suppressed|enabled]
 
         Notes:
           - Omit --input to enter interactive mode.
@@ -203,16 +203,19 @@ enum CleanupModelProbeCLI {
         case "full":
             return .full
         default:
-            return nil
+            return LocalCleanupModelKind(rawValue: value)
         }
     }
 
     private static func displayName(for modelKind: LocalCleanupModelKind) -> String {
-        switch modelKind {
-        case .fast:
+        if modelKind == .fast {
             return "fast"
-        case .full:
+        }
+
+        if modelKind == .full {
             return "full"
         }
+
+        return modelKind.rawValue
     }
 }

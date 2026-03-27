@@ -9,19 +9,3 @@ enum CleanupBackendOption: String, CaseIterable, Identifiable {
         "Local Models"
     }
 }
-
-enum LocalCleanupModelPolicy: String, CaseIterable, Identifiable {
-    case fastOnly
-    case fullOnly
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .fastOnly:
-            return "Qwen 3.5 2B (fast cleanup)"
-        case .fullOnly:
-            return "Qwen 3.5 4B (full cleanup)"
-        }
-    }
-}

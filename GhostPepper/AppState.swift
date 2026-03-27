@@ -879,7 +879,7 @@ class AppState: ObservableObject {
                 rawTranscription: rawTranscription,
                 correctedTranscription: correctedTranscription,
                 speechModelID: speechModel,
-                cleanupModelName: cleanupEnabled ? textCleanupManager.localModelPolicy.title : "Cleanup disabled",
+                cleanupModelName: cleanupEnabled ? textCleanupManager.selectedCleanupModelDisplayName : "Cleanup disabled",
                 cleanupUsedFallback: cleanupUsedFallback,
                 speakerFilteringEnabled: speakerFilteringEnabled,
                 speakerFilteringRan: speakerFilteringRan,

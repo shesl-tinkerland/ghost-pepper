@@ -34,9 +34,30 @@ typealias CleanupModelProbeExecutionOverride = @MainActor (
     _ thinkingMode: CleanupModelProbeThinkingMode
 ) async throws -> CleanupModelProbeRawResult
 
-enum LocalCleanupModelKind: Equatable {
+enum CleanupModelRecommendation: Equatable {
     case fast
     case full
+
+    var label: String {
+        switch self {
+        case .fast:
+            return "Fast"
+        case .full:
+            return "Full"
+        }
+    }
+}
+
+enum LocalCleanupModelKind: String, CaseIterable, Equatable, Identifiable {
+    case qwen35_0_8b_q4_k_m
+    case qwen35_2b_q4_k_s
+    case qwen35_2b_q4_k_m
+    case qwen35_4b_q4_k_m
+
+    var id: String { rawValue }
+
+    static var fast: LocalCleanupModelKind { .qwen35_2b_q4_k_m }
+    static var full: LocalCleanupModelKind { .qwen35_4b_q4_k_m }
 }
 
 struct CleanupModelDescriptor: Equatable {
@@ -46,6 +67,7 @@ struct CleanupModelDescriptor: Equatable {
     let fileName: String
     let url: String
     let maxTokenCount: Int32
+    let recommendation: CleanupModelRecommendation?
 }
 
 actor CleanupProbeExecutionGate {
@@ -77,89 +99,126 @@ actor CleanupProbeExecutionGate {
 final class TextCleanupManager: ObservableObject, TextCleaningManaging {
     @Published private(set) var state: CleanupModelState = .idle
     @Published private(set) var errorMessage: String?
-    @Published var localModelPolicy: LocalCleanupModelPolicy {
+    @Published var selectedCleanupModelKind: LocalCleanupModelKind {
         didSet {
-            defaults.set(localModelPolicy.rawValue, forKey: Self.localModelPolicyDefaultsKey)
-            updateReadyStateForCurrentPolicy()
+            defaults.set(selectedCleanupModelKind.rawValue, forKey: Self.selectedCleanupModelDefaultsKey)
         }
     }
 
     var debugLogger: ((DebugLogCategory, String) -> Void)?
 
-    /// Fast model for short inputs (< 15 words)
-    private(set) var fastLLM: LLM?
-    /// Full model for longer inputs
-    private(set) var fullLLM: LLM?
+    private(set) var activeLLM: LLM?
+    private(set) var activeLoadedModelKind: LocalCleanupModelKind?
 
-    static let fastModel = CleanupModelDescriptor(
-        kind: .fast,
-        displayName: "Qwen 3.5 2B (fast cleanup)",
+    static let compactModel = CleanupModelDescriptor(
+        kind: .qwen35_0_8b_q4_k_m,
+        displayName: "Qwen 3.5 0.8B Q4_K_M",
+        sizeDescription: "~535 MB",
+        fileName: "Qwen3.5-0.8B-Q4_K_M.gguf",
+        url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
+        maxTokenCount: 2048,
+        recommendation: nil
+    )
+
+    static let efficientModel = CleanupModelDescriptor(
+        kind: .qwen35_2b_q4_k_s,
+        displayName: "Qwen 3.5 2B Q4_K_S",
+        sizeDescription: "~1.2 GB",
+        fileName: "Qwen3.5-2B-Q4_K_S.gguf",
+        url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_S.gguf",
+        maxTokenCount: 2048,
+        recommendation: nil
+    )
+
+    static let recommendedFastModel = CleanupModelDescriptor(
+        kind: .qwen35_2b_q4_k_m,
+        displayName: "Qwen 3.5 2B Q4_K_M (Fast)",
         sizeDescription: "~1.3 GB",
         fileName: "Qwen3.5-2B-Q4_K_M.gguf",
         url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
-        maxTokenCount: 2048
+        maxTokenCount: 2048,
+        recommendation: .fast
     )
 
-    static let fullModel = CleanupModelDescriptor(
-        kind: .full,
-        displayName: "Qwen 3.5 4B (full cleanup)",
-        sizeDescription: "~2.5 GB",
+    static let recommendedFullModel = CleanupModelDescriptor(
+        kind: .qwen35_4b_q4_k_m,
+        displayName: "Qwen 3.5 4B Q4_K_M (Full)",
+        sizeDescription: "~2.8 GB",
         fileName: "Qwen3.5-4B-Q4_K_M.gguf",
         url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
-        maxTokenCount: 4096
+        maxTokenCount: 4096,
+        recommendation: .full
     )
 
-    static let cleanupModels = [fastModel, fullModel]
+    static let cleanupModels = [
+        compactModel,
+        efficientModel,
+        recommendedFastModel,
+        recommendedFullModel,
+    ]
+    static let fastModel = recommendedFastModel
+    static let fullModel = recommendedFullModel
+
+    static func cleanupModelKind(matchingArchivedName archivedName: String) -> LocalCleanupModelKind {
+        if let exactMatch = cleanupModels.first(where: { $0.displayName == archivedName }) {
+            return exactMatch.kind
+        }
+
+        if archivedName.contains("0.8B") {
+            return .qwen35_0_8b_q4_k_m
+        }
+
+        if archivedName.contains("Q4_K_S") && archivedName.contains("2B") {
+            return .qwen35_2b_q4_k_s
+        }
+
+        if archivedName.contains("2B") || archivedName.contains("1.7B") {
+            return .qwen35_2b_q4_k_m
+        }
+
+        return .qwen35_4b_q4_k_m
+    }
 
     var isReady: Bool { state == .ready }
+    var selectedCleanupModelDisplayName: String {
+        descriptor(for: selectedCleanupModelKind).displayName
+    }
+
     var hasUsableModelForCurrentPolicy: Bool {
-        switch localModelPolicy {
-        case .fastOnly:
-            return hasFastModel
-        case .fullOnly:
-            return hasFullModel
-        }
+        isModelAvailable(selectedCleanupModelKind)
     }
 
     private static let timeoutSeconds: TimeInterval = 15.0
-    private static let localModelPolicyDefaultsKey = "cleanupLocalModelPolicy"
+    private static let selectedCleanupModelDefaultsKey = "selectedCleanupModelKind"
 
     private let defaults: UserDefaults
-    private let fastModelAvailabilityOverride: Bool?
-    private let fullModelAvailabilityOverride: Bool?
+    private let cleanupModelAvailabilityOverrides: [LocalCleanupModelKind: Bool]
     private let probeExecutionOverride: CleanupModelProbeExecutionOverride?
     private let backendShutdownOverride: (() -> Void)?
     private let probeExecutionGate = CleanupProbeExecutionGate()
 
     init(
         defaults: UserDefaults = .standard,
-        localModelPolicy: LocalCleanupModelPolicy? = nil,
-        fastModelAvailabilityOverride: Bool? = nil,
-        fullModelAvailabilityOverride: Bool? = nil,
+        selectedCleanupModelKind: LocalCleanupModelKind? = nil,
+        cleanupModelAvailabilityOverrides: [LocalCleanupModelKind: Bool] = [:],
         probeExecutionOverride: CleanupModelProbeExecutionOverride? = nil,
         backendShutdownOverride: (() -> Void)? = nil
     ) {
         self.defaults = defaults
-        self.fastModelAvailabilityOverride = fastModelAvailabilityOverride
-        self.fullModelAvailabilityOverride = fullModelAvailabilityOverride
+        self.cleanupModelAvailabilityOverrides = cleanupModelAvailabilityOverrides
         self.probeExecutionOverride = probeExecutionOverride
         self.backendShutdownOverride = backendShutdownOverride
 
-        let storedPolicy = LocalCleanupModelPolicy(
-            rawValue: defaults.string(forKey: Self.localModelPolicyDefaultsKey) ?? ""
-        ) ?? .fullOnly
-        let initialPolicy = localModelPolicy ?? storedPolicy
-        self.localModelPolicy = initialPolicy
-        defaults.set(initialPolicy.rawValue, forKey: Self.localModelPolicyDefaultsKey)
+        let storedKind = LocalCleanupModelKind(
+            rawValue: defaults.string(forKey: Self.selectedCleanupModelDefaultsKey) ?? ""
+        ) ?? .qwen35_4b_q4_k_m
+        let initialKind = selectedCleanupModelKind ?? storedKind
+        self.selectedCleanupModelKind = initialKind
+        defaults.set(initialKind.rawValue, forKey: Self.selectedCleanupModelDefaultsKey)
     }
 
     func selectedModelKind(wordCount: Int, isQuestion: Bool) -> LocalCleanupModelKind? {
-        switch localModelPolicy {
-        case .fastOnly:
-            return hasFastModel ? .fast : nil
-        case .fullOnly:
-            return hasFullModel ? .full : nil
-        }
+        isModelAvailable(selectedCleanupModelKind) ? selectedCleanupModelKind : nil
     }
 
     var statusText: String {
@@ -188,13 +247,13 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
     }
 
     func clean(text: String, prompt: String? = nil, modelKind: LocalCleanupModelKind? = nil) async throws -> String {
-        let wordCount = text.split(separator: " ").count
-        let isQuestion = text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
+        let requestedModelKind = modelKind ?? selectedCleanupModelKind
+        await loadModel(kind: requestedModelKind)
 
-        guard let modelKind = modelKind ?? selectedModelKind(wordCount: wordCount, isQuestion: isQuestion) else {
+        guard model(for: requestedModelKind) != nil else {
             debugLogger?(
                 .cleanup,
-                "Skipped local cleanup because no usable model was ready for policy \(localModelPolicy.rawValue)."
+                "Skipped local cleanup because model \(requestedModelKind.rawValue) was not ready."
             )
             throw CleanupBackendError.unavailable
         }
@@ -204,7 +263,7 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
             let result = try await probe(
                 text: text,
                 prompt: activePrompt,
-                modelKind: modelKind,
+                modelKind: requestedModelKind,
                 thinkingMode: .suppressed
             )
             let cleaned = result.rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -212,7 +271,7 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
                 debugLogger?(
                     .cleanup,
                     """
-                    Discarded local cleanup output from \(modelKind == .fast ? "fast" : "full") model because it was unusable:
+                    Discarded local cleanup output from \(descriptor(for: requestedModelKind).displayName) because it was unusable:
                     \(result.rawOutput)
                     """
                 )
@@ -270,7 +329,7 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
                 let elapsed = Date().timeIntervalSince(start)
                 debugLogger?(
                     .cleanup,
-                    "Local cleanup finished in \(String(format: "%.2f", elapsed))s using \(modelKind == .fast ? "fast" : "full") model."
+                    "Local cleanup finished in \(String(format: "%.2f", elapsed))s using \(descriptor(for: modelKind).displayName)."
                 )
                 await probeExecutionGate.release()
                 return CleanupModelProbeRawResult(
@@ -294,35 +353,69 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
     }
 
     func loadModel() async {
-        guard state == .idle || state == .error else { return }
+        await loadModel(kind: selectedCleanupModelKind)
+    }
+
+    func downloadMissingModels() async {
+        guard state == .idle || state == .error || state == .ready else { return }
 
         errorMessage = nil
         try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
-        debugLogger?(.model, "Loading local cleanup models for policy \(localModelPolicy.rawValue).")
 
-        // Download both models if needed
-        let fastPath = modelPath(for: Self.fastModel.fileName)
-        let fullPath = modelPath(for: Self.fullModel.fileName)
+        for descriptor in Self.cleanupModels {
+            let path = modelPath(for: descriptor.fileName)
+            guard !FileManager.default.fileExists(atPath: path.path) else {
+                continue
+            }
 
-        let needsFast = !FileManager.default.fileExists(atPath: fastPath.path)
-        let needsFull = !FileManager.default.fileExists(atPath: fullPath.path)
-
-        if needsFast || needsFull {
             do {
-                if needsFast {
-                    try await downloadModel(
-                        kind: .fast,
-                        url: Self.fastModel.url,
-                        to: fastPath
-                    )
-                }
-                if needsFull {
-                    try await downloadModel(
-                        kind: .full,
-                        url: Self.fullModel.url,
-                        to: fullPath
-                    )
-                }
+                try await downloadModel(kind: descriptor.kind, url: descriptor.url, to: path)
+            } catch {
+                self.errorMessage = "Failed to download cleanup model: \(error.localizedDescription)"
+                self.state = .error
+                debugLogger?(.model, self.errorMessage ?? "Failed to download cleanup model.")
+                return
+            }
+        }
+
+        state = .idle
+        await loadModel()
+    }
+
+    func loadModel(kind: LocalCleanupModelKind) async {
+        if activeLoadedModelKind == kind && activeLLM != nil {
+            state = .ready
+            errorMessage = nil
+            return
+        }
+
+        if state == .loadingModel {
+            await waitForActiveLoad()
+            if activeLoadedModelKind == kind && activeLLM != nil {
+                state = .ready
+                errorMessage = nil
+                return
+            }
+        }
+
+        guard state == .idle || state == .error || state == .ready else { return }
+
+        if let override = availabilityOverride(for: kind), !override {
+            errorMessage = "Failed to load the selected cleanup model."
+            state = .error
+            return
+        }
+
+        errorMessage = nil
+        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+
+        let descriptor = descriptor(for: kind)
+        let path = modelPath(for: descriptor.fileName)
+        debugLogger?(.model, "Loading local cleanup model \(descriptor.displayName).")
+
+        if !FileManager.default.fileExists(atPath: path.path) {
+            do {
+                try await downloadModel(kind: kind, url: descriptor.url, to: path)
             } catch {
                 self.errorMessage = "Failed to download cleanup model: \(error.localizedDescription)"
                 self.state = .error
@@ -332,47 +425,37 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
         }
 
         state = .loadingModel
+        activeLLM = nil
+        activeLoadedModelKind = nil
 
-        let fastModel = Self.fastModel
-        let fullModel = Self.fullModel
-
-        // Load fast model first (smaller, quicker to load)
-        let fast = await Task.detached { () -> LLM? in
-            guard let llm = LLM(from: fastPath, maxTokenCount: fastModel.maxTokenCount) else {
+        let loadedModel = await Task.detached { () -> LLM? in
+            guard let llm = LLM(from: path, maxTokenCount: descriptor.maxTokenCount) else {
                 return nil
             }
             llm.useResolvedTemplate(systemPrompt: TextCleaner.defaultPrompt)
             return llm
         }.value
 
-        if let fast = fast {
-            fast.temp = 0.1
-            fast.update = { (_: String?) in }
-            fast.postprocess = { (_: String) in }
-            self.fastLLM = fast
+        guard let loadedModel else {
+            errorMessage = "Failed to load the selected cleanup model."
+            state = .error
+            debugLogger?(.model, "Local cleanup model unavailable: \(descriptor.displayName).")
+            return
         }
 
-        // Load full model
-        let full = await Task.detached { () -> LLM? in
-            guard let llm = LLM(from: fullPath, maxTokenCount: fullModel.maxTokenCount) else {
-                return nil
-            }
-            llm.useResolvedTemplate(systemPrompt: TextCleaner.defaultPrompt)
-            return llm
-        }.value
-
-        if let full = full {
-            full.temp = 0.1
-            full.update = { (_: String?) in }
-            full.postprocess = { (_: String) in }
-            self.fullLLM = full
-        }
-        updateReadyStateForCurrentPolicy()
+        loadedModel.temp = 0.1
+        loadedModel.update = { (_: String?) in }
+        loadedModel.postprocess = { (_: String) in }
+        activeLLM = loadedModel
+        activeLoadedModelKind = kind
+        state = .ready
+        errorMessage = nil
+        debugLogger?(.model, "Local cleanup model ready: \(descriptor.displayName).")
     }
 
     func unloadModel() {
-        fastLLM = nil
-        fullLLM = nil
+        activeLLM = nil
+        activeLoadedModelKind = nil
         state = .idle
         errorMessage = nil
         debugLogger?(.model, "Unloaded local cleanup models.")
@@ -388,15 +471,16 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
         debugLogger?(.model, "Shutdown llama backend.")
     }
 
-    var loadedModelKinds: Set<LocalCleanupModelKind> {
-        var kinds = Set<LocalCleanupModelKind>()
-        if fastLLM != nil {
-            kinds.insert(.fast)
-        }
-        if fullLLM != nil {
-            kinds.insert(.full)
-        }
-        return kinds
+    var cachedModelKinds: Set<LocalCleanupModelKind> {
+        Set(Self.cleanupModels.compactMap { descriptor in
+            if let override = availabilityOverride(for: descriptor.kind) {
+                return override ? descriptor.kind : nil
+            }
+
+            return FileManager.default.fileExists(atPath: modelPath(for: descriptor.fileName).path)
+                ? descriptor.kind
+                : nil
+        })
     }
 
     private func downloadModel(kind: LocalCleanupModelKind, url urlString: String, to destination: URL) async throws {
@@ -417,40 +501,25 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
         try FileManager.default.moveItem(at: tempURL, to: destination)
     }
 
-    private var hasFastModel: Bool {
-        fastModelAvailabilityOverride ?? (fastLLM != nil)
-    }
-
-    private var hasFullModel: Bool {
-        fullModelAvailabilityOverride ?? (fullLLM != nil)
-    }
-
-    private func selectedModel(wordCount: Int, isQuestion: Bool) -> LLM? {
-        switch selectedModelKind(wordCount: wordCount, isQuestion: isQuestion) {
-        case .fast:
-            return fastLLM
-        case .full:
-            return fullLLM
-        case nil:
-            return nil
-        }
-    }
-
     private func model(for modelKind: LocalCleanupModelKind) -> LLM? {
-        switch modelKind {
-        case .fast:
-            return fastLLM
-        case .full:
-            return fullLLM
-        }
+        activeLoadedModelKind == modelKind ? activeLLM : nil
     }
 
     private func descriptor(for modelKind: LocalCleanupModelKind) -> CleanupModelDescriptor {
-        switch modelKind {
-        case .fast:
-            return Self.fastModel
-        case .full:
-            return Self.fullModel
+        Self.cleanupModels.first(where: { $0.kind == modelKind })!
+    }
+
+    private func availabilityOverride(for modelKind: LocalCleanupModelKind) -> Bool? {
+        guard !cleanupModelAvailabilityOverrides.isEmpty else {
+            return nil
+        }
+
+        return cleanupModelAvailabilityOverrides[modelKind] ?? false
+    }
+
+    private func waitForActiveLoad() async {
+        while state == .loadingModel {
+            try? await Task.sleep(nanoseconds: 10_000_000)
         }
     }
 
@@ -467,27 +536,16 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
         }
     }
 
-    private func updateReadyStateForCurrentPolicy() {
-        if hasUsableModelForCurrentPolicy {
-            state = .ready
-            errorMessage = nil
-            debugLogger?(
-                .model,
-                "Local cleanup models ready. fastLoaded=\(hasFastModel) fullLoaded=\(hasFullModel) policy=\(localModelPolicy.rawValue)."
-            )
-            return
+    private func isModelAvailable(_ modelKind: LocalCleanupModelKind) -> Bool {
+        if let override = availabilityOverride(for: modelKind) {
+            return override
         }
 
-        guard fastLLM != nil || fullLLM != nil || state == .loadingModel else {
-            return
+        if activeLoadedModelKind == modelKind && activeLLM != nil {
+            return true
         }
 
-        errorMessage = "Failed to load the selected cleanup model."
-        state = .error
-        debugLogger?(
-            .model,
-            "Local cleanup models unavailable for policy \(localModelPolicy.rawValue). fastLoaded=\(hasFastModel) fullLoaded=\(hasFullModel)."
-        )
+        return FileManager.default.fileExists(atPath: modelPath(for: descriptor(for: modelKind).fileName).path)
     }
 }
 

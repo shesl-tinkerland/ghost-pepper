@@ -21,7 +21,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
     func testCLIFormatsTranscriptForOneShotRuns() {
         let transcript = CleanupModelProbeTranscript(
             modelKind: .fast,
-            modelDisplayName: "Qwen 3.5 2B (fast cleanup)",
+            modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
             thinkingMode: .none,
             input: "Okay, it's running now.",
             correctedInput: "Okay, it's running now.",
@@ -35,7 +35,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
 
         let formatted = CleanupModelProbeCLI.format(transcript)
 
-        XCTAssertTrue(formatted.contains("Model: Qwen 3.5 2B (fast cleanup) [fast]"))
+        XCTAssertTrue(formatted.contains("Model: \(TextCleanupManager.recommendedFastModel.displayName) [fast]"))
         XCTAssertTrue(formatted.contains("Thinking mode: none"))
         XCTAssertTrue(formatted.contains("Prompt:\nSystem prompt"))
         XCTAssertTrue(formatted.contains("Raw model output:\n<think>\nReasoning"))
@@ -68,7 +68,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
 
                 return CleanupModelProbeRawResult(
                     modelKind: .fast,
-                    modelDisplayName: "Qwen 3.5 2B (fast cleanup)",
+                    modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
                     rawOutput: """
                     <think>
                     Okay, the user said "Okay, it's running now."
@@ -98,7 +98,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
         )
         XCTAssertEqual(transcript.sanitizedOutput, "")
         XCTAssertEqual(transcript.finalOutput, "")
-        XCTAssertEqual(transcript.modelDisplayName, "Qwen 3.5 2B (fast cleanup)")
+        XCTAssertEqual(transcript.modelDisplayName, TextCleanupManager.recommendedFastModel.displayName)
         XCTAssertEqual(transcript.elapsed, 1.25, accuracy: 0.001)
     }
 
@@ -120,7 +120,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
 
                 return CleanupModelProbeRawResult(
                     modelKind: .fast,
-                    modelDisplayName: "Qwen 3.5 2B (fast cleanup)",
+                    modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
                     rawOutput: "ChatGPT fixes text",
                     elapsed: 0.25
                 )
@@ -156,7 +156,7 @@ final class CleanupModelProbeRunnerTests: XCTestCase {
 
                 return CleanupModelProbeRawResult(
                     modelKind: .full,
-                    modelDisplayName: "Qwen 3.5 4B (full cleanup)",
+                    modelDisplayName: TextCleanupManager.recommendedFullModel.displayName,
                     rawOutput: "Terminal says hello",
                     elapsed: 0.5
                 )

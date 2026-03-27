@@ -1,14 +1,19 @@
 import Foundation
 
 enum CleanupModelProbeMain {
+    private static let ghostPepperDefaultsDomain = "com.github.matthartman.ghostpepper"
+
     @MainActor
     static func run() async -> Int32 {
         do {
             let command = try CleanupModelProbeCLI.parse(arguments: Array(CommandLine.arguments.dropFirst()))
-            let manager = TextCleanupManager()
-            await manager.loadModel()
+            let manager = TextCleanupManager(selectedCleanupModelKind: command.modelKind)
+            await manager.loadModel(kind: command.modelKind)
+            let defaults = UserDefaults(suiteName: ghostPepperDefaultsDomain) ?? .standard
 
-            let runner = CleanupModelProbeRunner { input, prompt, modelKind, thinkingMode in
+            let runner = CleanupModelProbeRunner(
+                correctionStore: CorrectionStore(defaults: defaults)
+            ) { input, prompt, modelKind, thinkingMode in
                 try await manager.probe(
                     text: input,
                     prompt: prompt,
@@ -16,11 +21,12 @@ enum CleanupModelProbeMain {
                     thinkingMode: thinkingMode
                 )
             }
+            let activePrompt = command.prompt ?? defaults.string(forKey: "cleanupPrompt")
 
             if let input = command.input {
-                try await runOneShot(command: command, runner: runner, input: input)
+                try await runOneShot(command: command, runner: runner, input: input, prompt: activePrompt)
             } else {
-                try await runInteractive(command: command, runner: runner)
+                try await runInteractive(command: command, runner: runner, prompt: activePrompt)
             }
 
             return EXIT_SUCCESS
@@ -37,16 +43,18 @@ enum CleanupModelProbeMain {
     private static func runOneShot(
         command: CleanupModelProbeCommand,
         runner: CleanupModelProbeRunner,
-        input: String
+        input: String,
+        prompt: String?
     ) async throws {
-        let transcript = try await runProbe(command: command, runner: runner, input: input)
+        let transcript = try await runProbe(command: command, runner: runner, input: input, prompt: prompt)
         print(CleanupModelProbeCLI.format(transcript))
     }
 
     @MainActor
     private static func runInteractive(
         command: CleanupModelProbeCommand,
-        runner: CleanupModelProbeRunner
+        runner: CleanupModelProbeRunner,
+        prompt: String?
     ) async throws {
         print("Loaded \(label(for: command.modelKind)). Enter text to probe, or :quit to exit.")
 
@@ -67,7 +75,7 @@ enum CleanupModelProbeMain {
                 continue
             }
 
-            let transcript = try await runProbe(command: command, runner: runner, input: nextInput)
+            let transcript = try await runProbe(command: command, runner: runner, input: nextInput, prompt: prompt)
             print(CleanupModelProbeCLI.format(transcript))
             print("")
         }
@@ -77,25 +85,21 @@ enum CleanupModelProbeMain {
     private static func runProbe(
         command: CleanupModelProbeCommand,
         runner: CleanupModelProbeRunner,
-        input: String
+        input: String,
+        prompt: String?
     ) async throws -> CleanupModelProbeTranscript {
         try await runner.run(
             input: input,
             modelKind: command.modelKind,
             thinkingMode: command.thinkingMode,
-            prompt: command.prompt,
+            prompt: prompt,
             windowContext: command.windowContext.map { OCRContext(windowContents: $0) }
         )
     }
 
     @MainActor
     private static func label(for modelKind: LocalCleanupModelKind) -> String {
-        switch modelKind {
-        case .fast:
-            return TextCleanupManager.fastModel.displayName
-        case .full:
-            return TextCleanupManager.fullModel.displayName
-        }
+        TextCleanupManager.cleanupModels.first(where: { $0.kind == modelKind })?.displayName ?? modelKind.rawValue
     }
 }
 

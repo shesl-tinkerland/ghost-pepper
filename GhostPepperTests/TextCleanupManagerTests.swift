@@ -9,8 +9,8 @@ final class TextCleanupManagerTests: XCTestCase {
         func run(text: String) async -> CleanupModelProbeRawResult {
             if isRunning {
                 return CleanupModelProbeRawResult(
-                    modelKind: .fast,
-                    modelDisplayName: TextCleanupManager.fastModel.displayName,
+                    modelKind: .qwen35_2b_q4_k_m,
+                    modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
                     rawOutput: "",
                     elapsed: 0
                 )
@@ -21,106 +21,108 @@ final class TextCleanupManagerTests: XCTestCase {
             isRunning = false
 
             return CleanupModelProbeRawResult(
-                modelKind: .fast,
-                modelDisplayName: TextCleanupManager.fastModel.displayName,
+                modelKind: .qwen35_2b_q4_k_m,
+                modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
                 rawOutput: text,
                 elapsed: 0.05
             )
         }
     }
 
-    func testCleanupModelDescriptorsUseQwenThreeFamilyModels() {
+    func testCleanupModelCatalogIncludesRecommendedAndExperimentalQwenModels() {
         XCTAssertEqual(
-            TextCleanupManager.fastModel.displayName,
-            "Qwen 3.5 2B (fast cleanup)"
+            TextCleanupManager.cleanupModels.map(\.kind),
+            [
+                .qwen35_0_8b_q4_k_m,
+                .qwen35_2b_q4_k_s,
+                .qwen35_2b_q4_k_m,
+                .qwen35_4b_q4_k_m,
+            ]
         )
         XCTAssertEqual(
-            TextCleanupManager.fastModel.fileName,
-            "Qwen3.5-2B-Q4_K_M.gguf"
+            TextCleanupManager.cleanupModels.map(\.displayName),
+            [
+                "Qwen 3.5 0.8B Q4_K_M",
+                "Qwen 3.5 2B Q4_K_S",
+                "Qwen 3.5 2B Q4_K_M (Fast)",
+                "Qwen 3.5 4B Q4_K_M (Full)",
+            ]
         )
         XCTAssertEqual(
-            TextCleanupManager.fullModel.displayName,
-            "Qwen 3.5 4B (full cleanup)"
-        )
-        XCTAssertEqual(
-            TextCleanupManager.fullModel.fileName,
+            TextCleanupManager.recommendedFullModel.fileName,
             "Qwen3.5-4B-Q4_K_M.gguf"
         )
     }
 
-    func testCleanupModelPoliciesListOnlyConcreteModels() {
-        XCTAssertEqual(LocalCleanupModelPolicy.allCases, [.fastOnly, .fullOnly])
-    }
-
-    func testDefaultPolicyUsesFullModel() {
+    func testDefaultSelectionUsesRecommendedFullModel() {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
         let manager = TextCleanupManager(
             defaults: defaults,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_4b_q4_k_m: true
+            ]
         )
 
+        XCTAssertEqual(manager.selectedCleanupModelKind, .qwen35_4b_q4_k_m)
         XCTAssertEqual(
             manager.selectedModelKind(wordCount: 4, isQuestion: false),
-            .full
+            .qwen35_4b_q4_k_m
         )
     }
 
-    func testFastOnlyPolicyAlwaysReturnsFastWhenReady() {
+    func testSelectedCleanupModelPersistsConcreteModelChoice() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
         let manager = TextCleanupManager(
-            localModelPolicy: .fastOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true
+            defaults: defaults,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_2b_q4_k_s: true
+            ]
+        )
+        manager.selectedCleanupModelKind = .qwen35_2b_q4_k_s
+
+        let restored = TextCleanupManager(
+            defaults: defaults,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_2b_q4_k_s: true
+            ]
+        )
+
+        XCTAssertEqual(restored.selectedCleanupModelKind, .qwen35_2b_q4_k_s)
+    }
+
+    func testSelectedCleanupModelReturnsChosenModelWhenReady() {
+        let manager = TextCleanupManager(
+            selectedCleanupModelKind: .qwen35_0_8b_q4_k_m,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_0_8b_q4_k_m: true
+            ]
         )
 
         XCTAssertEqual(
             manager.selectedModelKind(wordCount: 40, isQuestion: true),
-            .fast
+            .qwen35_0_8b_q4_k_m
         )
     }
 
-    func testFullOnlyPolicyAlwaysReturnsFullWhenReady() {
+    func testSelectedCleanupModelTreatsChosenModelAsUsableWhenAvailable() {
         let manager = TextCleanupManager(
-            localModelPolicy: .fullOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true
-        )
-
-        XCTAssertEqual(
-            manager.selectedModelKind(wordCount: 4, isQuestion: false),
-            .full
-        )
-    }
-
-    func testQuestionSelectionStillFlowsThroughManagerPolicy() {
-        let manager = TextCleanupManager(
-            localModelPolicy: .fastOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true
-        )
-
-        XCTAssertEqual(
-            manager.selectedModelKind(wordCount: 3, isQuestion: true),
-            .fast
-        )
-    }
-
-    func testFullOnlyPolicyTreatsFullModelAsUsableWhenAvailable() {
-        let manager = TextCleanupManager(
-            localModelPolicy: .fullOnly,
-            fastModelAvailabilityOverride: false,
-            fullModelAvailabilityOverride: true
+            selectedCleanupModelKind: .qwen35_2b_q4_k_s,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_2b_q4_k_s: true
+            ]
         )
 
         XCTAssertTrue(manager.hasUsableModelForCurrentPolicy)
     }
 
-    func testFullOnlyPolicyRequiresFullModelToBeUsable() {
+    func testSelectedCleanupModelRequiresChosenModelToBeUsable() {
         let manager = TextCleanupManager(
-            localModelPolicy: .fullOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: false
+            selectedCleanupModelKind: .qwen35_2b_q4_k_s,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_2b_q4_k_m: true
+            ]
         )
 
         XCTAssertFalse(manager.hasUsableModelForCurrentPolicy)
@@ -129,14 +131,15 @@ final class TextCleanupManagerTests: XCTestCase {
     func testCleanupSuppressesThinkingForProductionCleanupCalls() async throws {
         var capturedThinkingMode: CleanupModelProbeThinkingMode?
         let manager = TextCleanupManager(
-            localModelPolicy: .fullOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true,
+            selectedCleanupModelKind: .qwen35_4b_q4_k_m,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_4b_q4_k_m: true
+            ],
             probeExecutionOverride: { _, _, _, thinkingMode in
                 capturedThinkingMode = thinkingMode
                 return CleanupModelProbeRawResult(
-                    modelKind: .full,
-                    modelDisplayName: TextCleanupManager.fullModel.displayName,
+                    modelKind: .qwen35_4b_q4_k_m,
+                    modelDisplayName: TextCleanupManager.recommendedFullModel.displayName,
                     rawOutput: "That worked really well.",
                     elapsed: 0.01
                 )
@@ -166,9 +169,10 @@ final class TextCleanupManagerTests: XCTestCase {
     func testCleanupSerializesOverlappingRequests() async throws {
         let harness = ProbeConcurrencyHarness()
         let manager = TextCleanupManager(
-            localModelPolicy: .fullOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true,
+            selectedCleanupModelKind: .qwen35_4b_q4_k_m,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_4b_q4_k_m: true
+            ],
             probeExecutionOverride: { text, _, _, _ in
                 await harness.run(text: text)
             }
@@ -184,9 +188,10 @@ final class TextCleanupManagerTests: XCTestCase {
 
     func testCleanupThrowsUnavailableWhenSelectedModelIsMissing() async {
         let manager = TextCleanupManager(
-            localModelPolicy: .fastOnly,
-            fastModelAvailabilityOverride: false,
-            fullModelAvailabilityOverride: true
+            selectedCleanupModelKind: .qwen35_2b_q4_k_m,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_4b_q4_k_m: true
+            ]
         )
 
         await XCTAssertThrowsErrorAsync(try await manager.clean(text: "hello", prompt: "unused")) { error in
@@ -196,13 +201,14 @@ final class TextCleanupManagerTests: XCTestCase {
 
     func testCleanupThrowsUnusableOutputWhenModelReturnsPlaceholder() async {
         let manager = TextCleanupManager(
-            localModelPolicy: .fastOnly,
-            fastModelAvailabilityOverride: true,
-            fullModelAvailabilityOverride: true,
+            selectedCleanupModelKind: .qwen35_2b_q4_k_m,
+            cleanupModelAvailabilityOverrides: [
+                .qwen35_2b_q4_k_m: true
+            ],
             probeExecutionOverride: { _, _, _, _ in
                 CleanupModelProbeRawResult(
-                    modelKind: .fast,
-                    modelDisplayName: TextCleanupManager.fastModel.displayName,
+                    modelKind: .qwen35_2b_q4_k_m,
+                    modelDisplayName: TextCleanupManager.recommendedFastModel.displayName,
                     rawOutput: "...",
                     elapsed: 0.01
                 )

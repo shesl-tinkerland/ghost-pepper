@@ -35,7 +35,7 @@ final class TranscriptionLabControllerTests: XCTestCase {
         XCTAssertEqual(controller.entries.map { $0.id }, [newerEntry.id, olderEntry.id])
         XCTAssertNil(controller.selectedEntryID)
         XCTAssertEqual(controller.selectedSpeechModelID, SpeechModelCatalog.defaultModelID)
-        XCTAssertEqual(controller.selectedCleanupModelKind, LocalCleanupModelKind.full)
+        XCTAssertEqual(controller.selectedCleanupModelKind, LocalCleanupModelKind.qwen35_4b_q4_k_m)
     }
 
     func testStageRerunsUpdateExperimentOutputs() async {
@@ -88,7 +88,7 @@ final class TranscriptionLabControllerTests: XCTestCase {
         controller.reloadEntries()
         controller.selectEntry(entry.id)
         controller.selectedSpeechModelID = "fluid_parakeet-v3"
-        controller.selectedCleanupModelKind = .full
+        controller.selectedCleanupModelKind = .qwen35_4b_q4_k_m
         controller.usesCapturedOCR = false
 
         await controller.rerunTranscription()
@@ -97,7 +97,7 @@ final class TranscriptionLabControllerTests: XCTestCase {
         XCTAssertEqual(executedSpeechModelID, "fluid_parakeet-v3")
         XCTAssertEqual(cleanupInputText, "raw rerun")
         XCTAssertEqual(executedCleanupPrompt, "custom prompt")
-        XCTAssertEqual(executedCleanupModelKind, .full)
+        XCTAssertEqual(executedCleanupModelKind, .qwen35_4b_q4_k_m)
         XCTAssertEqual(executedCleanupIncludesWindowContext, false)
         XCTAssertEqual(controller.experimentRawTranscription, "raw rerun")
         XCTAssertEqual(controller.experimentCorrectedTranscription, "clean rerun")

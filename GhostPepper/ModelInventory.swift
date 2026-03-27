@@ -22,7 +22,8 @@ enum RuntimeModelInventory {
         speechModelState: ModelManagerState,
         cachedSpeechModelNames: Set<String>,
         cleanupState: CleanupModelState,
-        loadedCleanupKinds: Set<LocalCleanupModelKind>
+        selectedCleanupModelKind: LocalCleanupModelKind,
+        cachedCleanupKinds: Set<LocalCleanupModelKind>
     ) -> [RuntimeModelRow] {
         let speechRows = ModelManager.availableModels.map { model in
             RuntimeModelRow(
@@ -47,8 +48,9 @@ enum RuntimeModelInventory {
                 isSelected: false,
                 status: statusForCleanupModel(
                     kind: model.kind,
+                    selectedCleanupModelKind: selectedCleanupModelKind,
                     cleanupState: cleanupState,
-                    loadedCleanupKinds: loadedCleanupKinds
+                    cachedCleanupKinds: cachedCleanupKinds
                 )
             )
         }
@@ -91,34 +93,23 @@ enum RuntimeModelInventory {
 
     private static func statusForCleanupModel(
         kind: LocalCleanupModelKind,
+        selectedCleanupModelKind: LocalCleanupModelKind,
         cleanupState: CleanupModelState,
-        loadedCleanupKinds: Set<LocalCleanupModelKind>
+        cachedCleanupKinds: Set<LocalCleanupModelKind>
     ) -> RuntimeModelStatus {
         if case let .downloading(activeKind, progress) = cleanupState, activeKind == kind {
             return .downloading(progress: progress)
         }
 
-        if cleanupState == .loadingModel, let loadingKind = loadingCleanupKind(loadedCleanupKinds: loadedCleanupKinds), loadingKind == kind {
-            return .downloading(progress: nil)
+        if cleanupState == .loadingModel, selectedCleanupModelKind == kind {
+            return .loading
         }
 
-        if loadedCleanupKinds.contains(kind) {
+        if cachedCleanupKinds.contains(kind) {
             return .loaded
         }
 
         return .notLoaded
-    }
-
-    private static func loadingCleanupKind(loadedCleanupKinds: Set<LocalCleanupModelKind>) -> LocalCleanupModelKind? {
-        if !loadedCleanupKinds.contains(.fast) {
-            return .fast
-        }
-
-        if !loadedCleanupKinds.contains(.full) {
-            return .full
-        }
-
-        return nil
     }
 }
 

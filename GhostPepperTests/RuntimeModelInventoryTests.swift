@@ -9,8 +9,9 @@ final class RuntimeModelInventoryTests: XCTestCase {
             activeSpeechModelName: "openai_whisper-small.en",
             speechModelState: .loading,
             cachedSpeechModelNames: ["openai_whisper-tiny.en"],
-            cleanupState: .downloading(kind: .full, progress: 0.4),
-            loadedCleanupKinds: [.fast]
+            cleanupState: .downloading(kind: .qwen35_4b_q4_k_m, progress: 0.4),
+            selectedCleanupModelKind: .qwen35_4b_q4_k_m,
+            cachedCleanupKinds: [.qwen35_0_8b_q4_k_m, .qwen35_2b_q4_k_m]
         )
 
         XCTAssertEqual(rows.map(\.name), [
@@ -18,8 +19,10 @@ final class RuntimeModelInventoryTests: XCTestCase {
             "Whisper small.en (accuracy)",
             "Whisper small (multilingual)",
             "Parakeet v3 (25 languages)",
-            TextCleanupManager.fastModel.displayName,
-            TextCleanupManager.fullModel.displayName,
+            "Qwen 3.5 0.8B Q4_K_M",
+            "Qwen 3.5 2B Q4_K_S",
+            "Qwen 3.5 2B Q4_K_M (Fast)",
+            "Qwen 3.5 4B Q4_K_M (Full)",
         ])
 
         XCTAssertEqual(rows[0].status, .loaded)
@@ -37,8 +40,14 @@ final class RuntimeModelInventoryTests: XCTestCase {
         XCTAssertEqual(rows[4].status, .loaded)
         XCTAssertFalse(rows[4].isSelected)
 
-        XCTAssertEqual(rows[5].status, .downloading(progress: 0.4))
+        XCTAssertEqual(rows[5].status, .notLoaded)
         XCTAssertFalse(rows[5].isSelected)
+
+        XCTAssertEqual(rows[6].status, .loaded)
+        XCTAssertFalse(rows[6].isSelected)
+
+        XCTAssertEqual(rows[7].status, .downloading(progress: 0.4))
+        XCTAssertFalse(rows[7].isSelected)
     }
 
     func testRuntimeModelRowsSeparateSelectedSpeechModelFromActiveDownload() {
@@ -48,7 +57,8 @@ final class RuntimeModelInventoryTests: XCTestCase {
             speechModelState: .loading,
             cachedSpeechModelNames: [],
             cleanupState: .idle,
-            loadedCleanupKinds: []
+            selectedCleanupModelKind: .qwen35_2b_q4_k_m,
+            cachedCleanupKinds: []
         )
 
         XCTAssertEqual(rows[0].status, .downloading(progress: nil))
@@ -65,7 +75,8 @@ final class RuntimeModelInventoryTests: XCTestCase {
             speechModelState: .loading,
             cachedSpeechModelNames: ["openai_whisper-small.en"],
             cleanupState: .idle,
-            loadedCleanupKinds: []
+            selectedCleanupModelKind: .qwen35_2b_q4_k_m,
+            cachedCleanupKinds: []
         )
 
         XCTAssertEqual(rows[1].status, .loading)
