@@ -333,11 +333,11 @@ struct SettingsView: View {
             .filter { !appState.modelManager.cachedModelNames.contains($0) }
 
         for modelName in missingSpeechModels {
-            await appState.modelManager.loadModel(name: modelName)
+            await appState.loadSpeechModel(name: modelName)
         }
 
         if appState.modelManager.modelName != selectedSpeechModelName || !appState.modelManager.isReady {
-            await appState.modelManager.loadModel(name: selectedSpeechModelName)
+            await appState.loadSpeechModel(name: selectedSpeechModelName)
         }
 
         if appState.textCleanupManager.cachedModelKinds.count < TextCleanupManager.cleanupModels.count {
@@ -653,7 +653,7 @@ struct SettingsView: View {
                     .frame(maxWidth: 320, alignment: .leading)
                     .onChange(of: appState.speechModel) { _, newModel in
                         Task {
-                            await appState.modelManager.loadModel(name: newModel)
+                            await appState.loadSpeechModel(name: newModel)
                         }
                     }
                 }

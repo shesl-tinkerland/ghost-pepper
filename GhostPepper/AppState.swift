@@ -136,6 +136,7 @@ class AppState: ObservableObject {
     private static let ignoreOtherSpeakersDefaultsKey = "ignoreOtherSpeakers"
     private static let playSoundsDefaultsKey = "playSounds"
     private static let emptyTranscriptionCancelThresholdSampleCount = 80_000
+    private static let speechModelErrorPrefix = "Failed to load speech model: "
 
     nonisolated static let defaultPushToTalkChord = KeyChord(keys: Set([
         PhysicalKey(keyCode: 54),  // Right Command
@@ -336,15 +337,13 @@ class AppState: ObservableObject {
         }
         debugLogStore.record(category: .model, message: "App initialization started.")
         if !modelManager.isReady {
-            await modelManager.loadModel(name: speechModel)
+            await loadSpeechModel(name: speechModel)
         }
         if showOverlay {
             overlay.dismiss()
         }
 
         guard modelManager.isReady else {
-            errorMessage = "Failed to load speech model: \(modelManager.error?.localizedDescription ?? "unknown error")"
-            status = .error
             return
         }
 
@@ -1063,8 +1062,9 @@ class AppState: ObservableObject {
                 let audioData = try Data(contentsOf: transcriptionLabStore.audioURL(for: entry.audioFileName))
                 return try AudioRecorder.deserializeArchivedAudioBuffer(from: audioData)
             },
-            loadSpeechModel: { [modelManager] modelID in
-                await modelManager.loadModel(name: modelID)
+            loadSpeechModel: { [weak self] modelID in
+                guard let self else { return }
+                await self.loadSpeechModel(name: modelID)
             },
             transcribe: { [transcriber] audioBuffer in
                 await transcriber.transcribe(audioBuffer: audioBuffer)
@@ -1085,6 +1085,44 @@ class AppState: ObservableObject {
             return
         }
 
-        await modelManager.loadModel(name: preferredSpeechModelID)
+        await loadSpeechModel(name: preferredSpeechModelID)
+    }
+
+    func loadSpeechModel(name: String) async {
+        await modelManager.loadModel(name: name)
+        let nextPresentation = Self.nextSpeechModelPresentation(
+            managerState: modelManager.state,
+            managerError: modelManager.error,
+            currentStatus: status,
+            currentErrorMessage: errorMessage
+        )
+        status = nextPresentation.status
+        errorMessage = nextPresentation.errorMessage
+    }
+
+    static func nextSpeechModelPresentation(
+        managerState: ModelManagerState,
+        managerError: Error?,
+        currentStatus: AppStatus,
+        currentErrorMessage: String?
+    ) -> (status: AppStatus, errorMessage: String?) {
+        switch managerState {
+        case .error:
+            return (
+                .error,
+                "\(speechModelErrorPrefix)\(managerError?.localizedDescription ?? "unknown error")"
+            )
+        case .ready:
+            let shouldClearSpeechModelError = currentErrorMessage?.hasPrefix(speechModelErrorPrefix) == true
+            let nextStatus: AppStatus = shouldClearSpeechModelError && currentStatus == .error
+                ? .ready
+                : currentStatus
+            return (
+                nextStatus,
+                shouldClearSpeechModelError ? nil : currentErrorMessage
+            )
+        case .idle, .loading:
+            return (currentStatus, currentErrorMessage)
+        }
     }
 }

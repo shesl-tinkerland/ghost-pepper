@@ -227,6 +227,54 @@ final class GhostPepperTests: XCTestCase {
         XCTAssertEqual(appState.cleanupBackend, .localModels)
     }
 
+    func testSpeechModelPresentationShowsManagerLoadFailure() {
+        let loadError = NSError(
+            domain: NSURLErrorDomain,
+            code: -1001,
+            userInfo: [NSLocalizedDescriptionKey: "The request timed out."]
+        )
+
+        let next = AppState.nextSpeechModelPresentation(
+            managerState: .error,
+            managerError: loadError,
+            currentStatus: .ready,
+            currentErrorMessage: nil
+        )
+
+        XCTAssertEqual(next.status, .error)
+        XCTAssertEqual(
+            next.errorMessage,
+            "Failed to load speech model: The request timed out."
+        )
+    }
+
+    func testSpeechModelPresentationClearsStaleSpeechModelErrorAfterSuccessfulLoad() {
+        let next = AppState.nextSpeechModelPresentation(
+            managerState: .ready,
+            managerError: nil,
+            currentStatus: .error,
+            currentErrorMessage: "Failed to load speech model: The request timed out."
+        )
+
+        XCTAssertEqual(next.status, .ready)
+        XCTAssertNil(next.errorMessage)
+    }
+
+    func testSpeechModelPresentationPreservesUnrelatedErrorAfterSuccessfulLoad() {
+        let next = AppState.nextSpeechModelPresentation(
+            managerState: .ready,
+            managerError: nil,
+            currentStatus: .error,
+            currentErrorMessage: "Accessibility access required — grant permission then click Retry"
+        )
+
+        XCTAssertEqual(next.status, .error)
+        XCTAssertEqual(
+            next.errorMessage,
+            "Accessibility access required — grant permission then click Retry"
+        )
+    }
+
     func testAppStateUpdateCleanupBackendPersistsAndUpdatesTextCleaner() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: #function))
         defaults.removePersistentDomain(forName: #function)
