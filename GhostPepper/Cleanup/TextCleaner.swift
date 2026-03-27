@@ -346,7 +346,6 @@ final class TextCleaner {
             System prompt:
             \(prompt)
 
-            User input:
             \(input)
 
             Raw model output:

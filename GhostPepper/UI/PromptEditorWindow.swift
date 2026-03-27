@@ -159,7 +159,6 @@ private struct CleanupTranscriptView: View {
                     System prompt:
                     \(transcript.prompt)
 
-                    User input:
                     \(transcript.inputText)
                     """
                 )
