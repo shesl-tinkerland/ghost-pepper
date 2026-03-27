@@ -712,7 +712,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Recommended defaults are marked Fast and Full. The other Qwen variants are available for cleanup experiments and lower-memory use.")
+                Text("Recommended cleanup models are marked Very fast, Fast, and Full.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

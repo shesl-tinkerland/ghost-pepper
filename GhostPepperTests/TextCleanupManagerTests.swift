@@ -29,12 +29,11 @@ final class TextCleanupManagerTests: XCTestCase {
         }
     }
 
-    func testCleanupModelCatalogIncludesRecommendedAndExperimentalQwenModels() {
+    func testCleanupModelCatalogIncludesVeryFastFastAndFullQwenModels() {
         XCTAssertEqual(
             TextCleanupManager.cleanupModels.map(\.kind),
             [
                 .qwen35_0_8b_q4_k_m,
-                .qwen35_2b_q4_k_s,
                 .qwen35_2b_q4_k_m,
                 .qwen35_4b_q4_k_m,
             ]
@@ -42,8 +41,7 @@ final class TextCleanupManagerTests: XCTestCase {
         XCTAssertEqual(
             TextCleanupManager.cleanupModels.map(\.displayName),
             [
-                "Qwen 3.5 0.8B Q4_K_M",
-                "Qwen 3.5 2B Q4_K_S",
+                "Qwen 3.5 0.8B Q4_K_M (Very fast)",
                 "Qwen 3.5 2B Q4_K_M (Fast)",
                 "Qwen 3.5 4B Q4_K_M (Full)",
             ]
@@ -77,19 +75,19 @@ final class TextCleanupManagerTests: XCTestCase {
         let manager = TextCleanupManager(
             defaults: defaults,
             cleanupModelAvailabilityOverrides: [
-                .qwen35_2b_q4_k_s: true
+                .qwen35_0_8b_q4_k_m: true
             ]
         )
-        manager.selectedCleanupModelKind = .qwen35_2b_q4_k_s
+        manager.selectedCleanupModelKind = .qwen35_0_8b_q4_k_m
 
         let restored = TextCleanupManager(
             defaults: defaults,
             cleanupModelAvailabilityOverrides: [
-                .qwen35_2b_q4_k_s: true
+                .qwen35_0_8b_q4_k_m: true
             ]
         )
 
-        XCTAssertEqual(restored.selectedCleanupModelKind, .qwen35_2b_q4_k_s)
+        XCTAssertEqual(restored.selectedCleanupModelKind, .qwen35_0_8b_q4_k_m)
     }
 
     func testSelectedCleanupModelReturnsChosenModelWhenReady() {
@@ -108,9 +106,9 @@ final class TextCleanupManagerTests: XCTestCase {
 
     func testSelectedCleanupModelTreatsChosenModelAsUsableWhenAvailable() {
         let manager = TextCleanupManager(
-            selectedCleanupModelKind: .qwen35_2b_q4_k_s,
+            selectedCleanupModelKind: .qwen35_0_8b_q4_k_m,
             cleanupModelAvailabilityOverrides: [
-                .qwen35_2b_q4_k_s: true
+                .qwen35_0_8b_q4_k_m: true
             ]
         )
 
@@ -119,7 +117,7 @@ final class TextCleanupManagerTests: XCTestCase {
 
     func testSelectedCleanupModelRequiresChosenModelToBeUsable() {
         let manager = TextCleanupManager(
-            selectedCleanupModelKind: .qwen35_2b_q4_k_s,
+            selectedCleanupModelKind: .qwen35_0_8b_q4_k_m,
             cleanupModelAvailabilityOverrides: [
                 .qwen35_2b_q4_k_m: true
             ]

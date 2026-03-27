@@ -35,11 +35,14 @@ typealias CleanupModelProbeExecutionOverride = @MainActor (
 ) async throws -> CleanupModelProbeRawResult
 
 enum CleanupModelRecommendation: Equatable {
+    case veryFast
     case fast
     case full
 
     var label: String {
         switch self {
+        case .veryFast:
+            return "Very fast"
         case .fast:
             return "Fast"
         case .full:
@@ -50,7 +53,6 @@ enum CleanupModelRecommendation: Equatable {
 
 enum LocalCleanupModelKind: String, CaseIterable, Equatable, Identifiable {
     case qwen35_0_8b_q4_k_m
-    case qwen35_2b_q4_k_s
     case qwen35_2b_q4_k_m
     case qwen35_4b_q4_k_m
 
@@ -112,22 +114,12 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
 
     static let compactModel = CleanupModelDescriptor(
         kind: .qwen35_0_8b_q4_k_m,
-        displayName: "Qwen 3.5 0.8B Q4_K_M",
+        displayName: "Qwen 3.5 0.8B Q4_K_M (Very fast)",
         sizeDescription: "~535 MB",
         fileName: "Qwen3.5-0.8B-Q4_K_M.gguf",
         url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
         maxTokenCount: 2048,
-        recommendation: nil
-    )
-
-    static let efficientModel = CleanupModelDescriptor(
-        kind: .qwen35_2b_q4_k_s,
-        displayName: "Qwen 3.5 2B Q4_K_S",
-        sizeDescription: "~1.2 GB",
-        fileName: "Qwen3.5-2B-Q4_K_S.gguf",
-        url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_S.gguf",
-        maxTokenCount: 2048,
-        recommendation: nil
+        recommendation: .veryFast
     )
 
     static let recommendedFastModel = CleanupModelDescriptor(
@@ -152,7 +144,6 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
 
     static let cleanupModels = [
         compactModel,
-        efficientModel,
         recommendedFastModel,
         recommendedFullModel,
     ]
@@ -166,10 +157,6 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
 
         if archivedName.contains("0.8B") {
             return .qwen35_0_8b_q4_k_m
-        }
-
-        if archivedName.contains("Q4_K_S") && archivedName.contains("2B") {
-            return .qwen35_2b_q4_k_s
         }
 
         if archivedName.contains("2B") || archivedName.contains("1.7B") {

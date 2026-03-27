@@ -188,7 +188,7 @@ enum CleanupModelProbeCLI {
     static var usage: String {
         """
         Usage:
-          CleanupModelProbe --model fast|full|qwen35_0_8b_q4_k_m|qwen35_2b_q4_k_s|qwen35_2b_q4_k_m|qwen35_4b_q4_k_m [--input <text>] [--prompt <text>] [--window-context <text> | --window-context-file <path>] [--thinking none|suppressed|enabled]
+          CleanupModelProbe --model fast|full|qwen35_0_8b_q4_k_m|qwen35_2b_q4_k_m|qwen35_4b_q4_k_m [--input <text>] [--prompt <text>] [--window-context <text> | --window-context-file <path>] [--thinking none|suppressed|enabled]
 
         Notes:
           - Omit --input to enter interactive mode.

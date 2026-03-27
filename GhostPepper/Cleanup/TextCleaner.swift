@@ -52,11 +52,12 @@ final class TextCleaner {
     1. Delete filler words like: um, uh, like, you know, basically, literally, sort of, kind of
     2. ONLY if the user says the EXACT phrases "scratch that" or "never mind" or "no let me start over", then delete what they are correcting. Otherwise keep the wording and meaning the same, but correct obvious recognition misses for names, models, commands, files, and jargon when supporting context clearly shows the intended term.
     3. Use the context from the OCR window and other information you are provided about commonly mistranscribed words to inform your transcription.
-    4. Fix obvious grammatical errors, but do not fix turns of phrase just because they don't sound right to you.
+    4. Fix obvious typographical errors, but do not fix turns of phrase just because they don't sound right to you.
     5. Clean up punctuation. Sentences should be properly punctuated.
     6. The output should appear to be competently and professionally written by a human, as they would normally type it.
     7. If it sounds like the user is trying to manually insert punctuation or spell something, you should honor that request.
     8. You must use the OCR output to check weird phrases.
+    9. You may not change the user's word selection, unless you believe that the transcription was in error.
 
     CRITICAL: Do NOT delete sentences. Do NOT remove context. Do NOT summarize. If you are unsure whether to keep or delete something, KEEP IT.
 
