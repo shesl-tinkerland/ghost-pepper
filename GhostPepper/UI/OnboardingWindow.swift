@@ -210,6 +210,7 @@ struct SetupStep: View {
             selectedSpeechModelName: appState.speechModel,
             activeSpeechModelName: modelManager.modelName,
             speechModelState: modelManager.state,
+            speechDownloadProgress: modelManager.downloadProgress,
             cachedSpeechModelNames: modelManager.cachedModelNames,
             cleanupState: appState.textCleanupManager.state,
             selectedCleanupModelKind: appState.textCleanupManager.selectedCleanupModelKind,
@@ -218,15 +219,18 @@ struct SetupStep: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             Text("Setup 🌶️")
                 .font(.system(size: 24, weight: .bold))
                 .padding(.top, 24)
+                .padding(.bottom, 8)
 
             Text("Grant permissions and download the app models")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .padding(.bottom, 16)
 
+            ScrollView {
             VStack(spacing: 10) {
                 SetupRow(
                     icon: "mic.fill",
@@ -372,12 +376,16 @@ struct SetupStep: View {
                         }
                     }
 
-                    ModelInventoryCard(rows: modelRows)
+                    OnboardingModelSummary(
+                        speechModelRow: modelRows.first(where: { $0.isSelected }),
+                        cleanupModelRow: modelRows.first(where: { $0.id.hasPrefix("cleanup-") && $0.status != .notLoaded }) ?? modelRows.first(where: { $0.id.hasPrefix("cleanup-") })
+                    )
                 }
             }
             .padding(.horizontal, 24)
+            }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if allComplete {
                 Button(action: {
@@ -494,6 +502,97 @@ struct SetupRow<Actions: View>: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
+    }
+}
+
+private struct OnboardingModelSummary: View {
+    let speechModelRow: RuntimeModelRow?
+    let cleanupModelRow: RuntimeModelRow?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let row = speechModelRow {
+                OnboardingModelRow(label: "Speech", name: row.name, size: row.sizeDescription, status: row.status)
+            }
+            if let row = cleanupModelRow {
+                OnboardingModelRow(label: "Cleanup", name: row.name, size: row.sizeDescription, status: row.status)
+            }
+
+            Text("You can change models later in Settings.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 4)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+}
+
+private struct OnboardingModelRow: View {
+    let label: String
+    let name: String
+    let size: String
+    let status: RuntimeModelStatus
+
+    var body: some View {
+        HStack(spacing: 8) {
+            statusIndicator
+                .frame(width: 14, height: 14)
+
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 50, alignment: .leading)
+
+            Text(name)
+                .font(.caption)
+                .lineLimit(1)
+
+            Spacer()
+
+            Text(statusText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        switch status {
+        case .loaded:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+        case .loading:
+            ProgressView()
+                .controlSize(.mini)
+        case .downloading(let progress):
+            if let progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.circular)
+                    .controlSize(.mini)
+            } else {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        case .notLoaded:
+            Image(systemName: "circle")
+                .foregroundStyle(.quaternary)
+                .font(.caption)
+        }
+    }
+
+    private var statusText: String {
+        switch status {
+        case .loaded: "Ready"
+        case .loading: "Loading..."
+        case .downloading(let progress?): "Downloading \(Int(progress * 100))%"
+        case .downloading(nil): "Preparing..."
+        case .notLoaded: size
+        }
     }
 }
 

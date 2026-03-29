@@ -20,6 +20,7 @@ enum RuntimeModelInventory {
         selectedSpeechModelName: String,
         activeSpeechModelName: String,
         speechModelState: ModelManagerState,
+        speechDownloadProgress: Double?,
         cachedSpeechModelNames: Set<String>,
         cleanupState: CleanupModelState,
         selectedCleanupModelKind: LocalCleanupModelKind,
@@ -35,6 +36,7 @@ enum RuntimeModelInventory {
                     named: model.name,
                     activeSpeechModelName: activeSpeechModelName,
                     speechModelState: speechModelState,
+                    speechDownloadProgress: speechDownloadProgress,
                     cachedSpeechModelNames: cachedSpeechModelNames
                 )
             )
@@ -74,18 +76,18 @@ enum RuntimeModelInventory {
         }
     }
 
-    static func hasMissingModels(rows: [RuntimeModelRow]) -> Bool {
-        rows.contains { $0.status != .loaded }
-    }
-
     private static func statusForSpeechModel(
         named modelName: String,
         activeSpeechModelName: String,
         speechModelState: ModelManagerState,
+        speechDownloadProgress: Double?,
         cachedSpeechModelNames: Set<String>
     ) -> RuntimeModelStatus {
         if speechModelState == .loading && modelName == activeSpeechModelName {
-            return cachedSpeechModelNames.contains(modelName) ? .loading : .downloading(progress: nil)
+            if cachedSpeechModelNames.contains(modelName) {
+                return .loading
+            }
+            return .downloading(progress: speechDownloadProgress)
         }
 
         return cachedSpeechModelNames.contains(modelName) ? .loaded : .notLoaded

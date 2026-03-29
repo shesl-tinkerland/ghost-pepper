@@ -198,7 +198,7 @@ final class TextCleanupManager: ObservableObject, TextCleaningManaging {
 
         let storedKind = LocalCleanupModelKind(
             rawValue: defaults.string(forKey: Self.selectedCleanupModelDefaultsKey) ?? ""
-        ) ?? .qwen35_4b_q4_k_m
+        ) ?? .qwen35_0_8b_q4_k_m
         let initialKind = selectedCleanupModelKind ?? storedKind
         self.selectedCleanupModelKind = initialKind
         defaults.set(initialKind.rawValue, forKey: Self.selectedCleanupModelDefaultsKey)

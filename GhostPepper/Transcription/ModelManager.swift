@@ -13,6 +13,7 @@ final class ModelManager: ObservableObject {
     private var sortformerModels: SortformerModels?
 
     @Published private(set) var state: ModelManagerState = .idle
+    @Published private(set) var downloadProgress: Double?
     private(set) var modelName: String
     @Published private(set) var error: Error?
 
@@ -180,6 +181,19 @@ final class ModelManager: ObservableObject {
         let modelsDir = Self.whisperModelsDirectory
         try? FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
 
+        let needsDownload = !Self.modelIsCached(SpeechModelCatalog.model(named: modelName)!)
+        if needsDownload {
+            _ = try await WhisperKit.download(
+                variant: modelName,
+                downloadBase: modelsDir
+            ) { progress in
+                Task { @MainActor [weak self] in
+                    self?.downloadProgress = progress.fractionCompleted
+                }
+            }
+            downloadProgress = nil
+        }
+
         let config = WhisperKitConfig(
             model: modelName,
             downloadBase: modelsDir,
@@ -207,7 +221,12 @@ final class ModelManager: ObservableObject {
             version = .v3
         }
 
-        let models = try await AsrModels.downloadAndLoad(version: version)
+        let models = try await AsrModels.downloadAndLoad(version: version) { progress in
+            Task { @MainActor [weak self] in
+                self?.downloadProgress = progress.fractionCompleted
+            }
+        }
+        downloadProgress = nil
         let manager = AsrManager(config: .default)
         try await manager.initialize(models: models)
         fluidAudioManager = manager
@@ -222,6 +241,7 @@ final class ModelManager: ObservableObject {
         whisperKit = nil
         fluidAudioManager = nil
         sortformerModels = nil
+        downloadProgress = nil
     }
 
     private func retryLoadDelay() async {

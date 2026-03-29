@@ -206,6 +206,7 @@ struct SettingsView: View {
             selectedSpeechModelName: appState.speechModel,
             activeSpeechModelName: appState.modelManager.modelName,
             speechModelState: appState.modelManager.state,
+            speechDownloadProgress: appState.modelManager.downloadProgress,
             cachedSpeechModelNames: appState.modelManager.cachedModelNames,
             cleanupState: appState.textCleanupManager.state,
             selectedCleanupModelKind: appState.textCleanupManager.selectedCleanupModelKind,
@@ -213,9 +214,6 @@ struct SettingsView: View {
         )
     }
 
-    private var hasMissingModels: Bool {
-        RuntimeModelInventory.hasMissingModels(rows: modelRows)
-    }
 
     private var speakerFilteringToggleState: RecordingSpeakerFilteringToggleState {
         RecordingSpeakerFilteringToggleState(
@@ -223,9 +221,6 @@ struct SettingsView: View {
         )
     }
 
-    private var modelsAreDownloading: Bool {
-        RuntimeModelInventory.activeDownloadText(rows: modelRows) != nil
-    }
 
     var body: some View {
         HSplitView {
@@ -353,24 +348,6 @@ struct SettingsView: View {
         return entry.rawTranscription ?? ""
     }
 
-    private func downloadMissingModels() async {
-        let selectedSpeechModelName = appState.speechModel
-        let missingSpeechModels = ModelManager.availableModels
-            .map(\.name)
-            .filter { !appState.modelManager.cachedModelNames.contains($0) }
-
-        for modelName in missingSpeechModels {
-            await appState.loadSpeechModel(name: modelName)
-        }
-
-        if appState.modelManager.modelName != selectedSpeechModelName || !appState.modelManager.isReady {
-            await appState.loadSpeechModel(name: selectedSpeechModelName)
-        }
-
-        if appState.textCleanupManager.cachedModelKinds.count < TextCleanupManager.cleanupModels.count {
-            await appState.textCleanupManager.downloadMissingModels()
-        }
-    }
 
     private func formattedStageDuration(_ duration: TimeInterval) -> String {
         if duration < 1 {
@@ -728,26 +705,6 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if hasMissingModels {
-                        Button {
-                            Task {
-                                await downloadMissingModels()
-                            }
-                        } label: {
-                            HStack {
-                                if modelsAreDownloading {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                }
-                                Text(modelsAreDownloading ? "Downloading Models..." : "Download Missing Models")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-                        .disabled(modelsAreDownloading)
-                    }
                 }
             }
         }
