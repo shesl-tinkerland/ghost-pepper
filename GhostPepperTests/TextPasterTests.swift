@@ -285,4 +285,9 @@ final class TextPasterTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
         pasteboard.releaseGlobally()
     }
+
+    func testPasteAlwaysAllowedBundleIDsContainsZed() {
+        XCTAssertTrue(TextPaster.pasteAlwaysAllowedBundleIDs.contains("dev.zed.Zed"))
+        XCTAssertTrue(TextPaster.pasteAlwaysAllowedBundleIDs.contains("dev.zed.Zed-Preview"))
+    }
 }

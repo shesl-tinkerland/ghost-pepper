@@ -58,6 +58,14 @@ final class TextPaster {
 
     // MARK: - Timing Constants
 
+    /// Bundle IDs of apps that support Cmd+V but don't expose standard Accessibility
+    /// text-editing attributes. For these apps the AX preflight is skipped so Ghost
+    /// Pepper pastes directly instead of falling back to the clipboard.
+    static let pasteAlwaysAllowedBundleIDs: Set<String> = [
+        "dev.zed.Zed",
+        "dev.zed.Zed-Preview",
+    ]
+
     /// Delay after writing text to clipboard before simulating Cmd+V.
     static let preKeystrokeDelay: TimeInterval = 0.05
 
@@ -156,7 +164,10 @@ final class TextPaster {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        guard canPasteIntoFocusedElement(), let postCommandV = prepareCommandV() else {
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        let bypassPreflight = Self.pasteAlwaysAllowedBundleIDs.contains(frontmostBundleID)
+
+        guard bypassPreflight || canPasteIntoFocusedElement(), let postCommandV = prepareCommandV() else {
             onPasteEnd?()
             return .copiedToClipboard
         }
