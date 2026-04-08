@@ -26,6 +26,7 @@ Ghost Pepper uses open-source models that run entirely on your Mac. Models downl
 | **Whisper small.en** (default) | ~466 MB | Best accuracy, English only |
 | Whisper small (multilingual) | ~466 MB | Multi-language support |
 | Parakeet v3 (25 languages) | ~1.4 GB | Multi-language via [FluidAudio](https://github.com/FluidInference/FluidAudio) |
+| Qwen3-ASR 0.6B int8 (50+ languages) | ~900 MB | Highest multilingual quality, macOS 15+ required |
 
 ### Cleanup models
 

@@ -27,4 +27,5 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.state, .ready)
         XCTAssertNil(manager.error)
     }
+
 }

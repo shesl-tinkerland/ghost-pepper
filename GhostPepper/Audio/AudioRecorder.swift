@@ -5,7 +5,12 @@ final class AudioRecorder {
     var onRecordingStopped: (() -> Void)?
     var onConvertedAudioChunk: (([Float]) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// Recreated for every recording session. AVAudioEngine does not reliably
+    /// recover when the default input device or its sample rate changes between
+    /// sessions (Bluetooth mics flipping between HFP/A2DP profiles is the common
+    /// trigger), and the symptom is `HALB_IOThread: there already is a thread`
+    /// + EAGAIN on the next start. A fresh instance per session avoids that.
+    private var engine = AVAudioEngine()
     private let bufferLock = NSLock()
 
     /// The accumulated audio samples captured during recording.
@@ -90,34 +95,69 @@ final class AudioRecorder {
         bufferLock.unlock()
     }
 
+    /// Snapshot the buffer under the lock from a sync context.
+    /// Extracted so async callers don't touch NSLock directly (Swift 6 enforcement).
+    private func snapshotBuffer() -> [Float] {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return audioBuffer
+    }
+
     /// Starts capturing audio from the default input device.
     /// Audio is converted to 16 kHz mono Float32 and appended to `audioBuffer`.
     func startRecording() throws {
         resetBuffer()
 
+        // Tear down any leftover state from the previous session and rebuild the
+        // engine from scratch. See the engine property's doc comment for why.
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        engine = AVAudioEngine()
+
         let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        // `inputFormat(forBus:)` reflects the bus's *actual* HW input format.
+        // `outputFormat(forBus:)` is the downstream format and is the one that
+        // can go stale. Always trust inputFormat for input nodes.
+        let hwFormat = inputNode.inputFormat(forBus: 0)
+        print("AudioRecorder: input HW format = \(hwFormat), sampleRate=\(hwFormat.sampleRate), channels=\(hwFormat.channelCount)")
 
-        print("AudioRecorder: input device format = \(inputFormat), sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount)")
-
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
             throw AudioRecorderError.noInputAvailable
         }
 
-        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
-            throw AudioRecorderError.converterCreationFailed
-        }
+        // Roughly 100ms of audio at the actual HW rate.
+        let bufferSize: AVAudioFrameCount = AVAudioFrameCount(hwFormat.sampleRate * 0.1)
 
-        // Choose a buffer size that gives roughly 100ms of audio at the input sample rate.
-        let bufferSize: AVAudioFrameCount = AVAudioFrameCount(inputFormat.sampleRate * 0.1)
+        cachedConverter = nil
+        cachedConverterSourceFormat = nil
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] pcmBuffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { [weak self] pcmBuffer, _ in
             guard let self = self else { return }
+            guard let converter = self.converter(for: pcmBuffer.format) else { return }
             self.convert(buffer: pcmBuffer, using: converter)
         }
 
         try engine.start()
         onRecordingStarted?()
+    }
+
+    private var cachedConverter: AVAudioConverter?
+    private var cachedConverterSourceFormat: AVAudioFormat?
+
+    private func converter(for sourceFormat: AVAudioFormat) -> AVAudioConverter? {
+        if let cachedConverter, let cachedConverterSourceFormat,
+           cachedConverterSourceFormat.sampleRate == sourceFormat.sampleRate,
+           cachedConverterSourceFormat.channelCount == sourceFormat.channelCount {
+            return cachedConverter
+        }
+
+        let converter = AVAudioConverter(from: sourceFormat, to: targetFormat)
+        cachedConverter = converter
+        cachedConverterSourceFormat = sourceFormat
+        if converter == nil {
+            print("AudioRecorder: failed to create converter from \(sourceFormat) to \(targetFormat)")
+        }
+        return converter
     }
 
     /// Stops capturing audio and returns the recorded buffer.
@@ -130,9 +170,7 @@ final class AudioRecorder {
         engine.stop()
         onRecordingStopped?()
 
-        bufferLock.lock()
-        let result = audioBuffer
-        bufferLock.unlock()
+        let result = snapshotBuffer()
         print("AudioRecorder: stopped, buffer has \(result.count) samples (\(Double(result.count) / 16000.0)s of audio)")
         if !result.isEmpty {
             let maxAmplitude = result.map { abs($0) }.max() ?? 0

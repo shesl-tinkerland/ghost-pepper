@@ -11,6 +11,9 @@ final class ModelManager: ObservableObject {
     private(set) var whisperKit: WhisperKit?
     private var fluidAudioManager: AsrManager?
     private var sortformerModels: SortformerModels?
+    /// Stored as `Any?` because `Qwen3AsrManager` is `@available(macOS 15, *)`
+    /// and the app deploys to macOS 14. Cast at use sites under `#available`.
+    private var qwen3AsrManagerStorage: Any?
 
     @Published private(set) var state: ModelManagerState = .idle
     @Published private(set) var downloadProgress: Double?
@@ -105,7 +108,20 @@ final class ModelManager: ObservableObject {
         case .whisperKit:
             try await loadWhisperModel(named: requestedModel.name)
         case .fluidAudio:
-            try await loadFluidAudioModel(requestedModel)
+            switch requestedModel.fluidAudioVariant {
+            case .qwen3AsrInt8:
+                if #available(macOS 15, iOS 18, *) {
+                    try await loadQwen3AsrModel(requestedModel)
+                } else {
+                    throw NSError(
+                        domain: "GhostPepper.ModelManager",
+                        code: 501,
+                        userInfo: [NSLocalizedDescriptionKey: "Qwen3-ASR requires macOS 15 or later."]
+                    )
+                }
+            case .parakeetV3, .none:
+                try await loadFluidAudioModel(requestedModel)
+            }
         }
     }
 
@@ -125,10 +141,24 @@ final class ModelManager: ObservableObject {
                 let cleaned = SpeechTranscriber.removeArtifacts(from: text)
                 return cleaned.isEmpty ? nil : cleaned
             case .fluidAudio:
-                guard let fluidAudioManager else { return nil }
-                let result = try await fluidAudioManager.transcribe(audioBuffer, source: .microphone)
-                let cleaned = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                return cleaned.isEmpty ? nil : cleaned
+                switch model.fluidAudioVariant {
+                case .qwen3AsrInt8:
+                    if #available(macOS 15, iOS 18, *) {
+                        guard let manager = qwen3AsrManagerStorage as? Qwen3AsrManager else { return nil }
+                        let text: String = try await manager.transcribe(
+                            audioSamples: audioBuffer,
+                            language: nil as String?
+                        )
+                        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return cleaned.isEmpty ? nil : cleaned
+                    }
+                    return nil
+                case .parakeetV3, .none:
+                    guard let fluidAudioManager else { return nil }
+                    let result = try await fluidAudioManager.transcribe(audioBuffer, source: .microphone)
+                    let cleaned = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return cleaned.isEmpty ? nil : cleaned
+                }
             }
         } catch {
             debugLogger?(.model, "Speech transcription failed for \(modelName): \(error.localizedDescription)")
@@ -155,7 +185,7 @@ final class ModelManager: ObservableObject {
                 session: session,
                 processAudioChunk: { samples in
                     do {
-                        _ = try diarizer.processSamples(samples)
+                        _ = try diarizer.process(samples: samples)
                     } catch {
                         self.debugLogger?(
                             .model,
@@ -165,7 +195,9 @@ final class ModelManager: ObservableObject {
                 },
                 finish: {
                     diarizer.timeline.finalize()
-                    return Self.diarizationSpans(from: diarizer.timeline.segments)
+                    let segments = diarizer.timeline.speakers.values
+                        .flatMap { $0.finalizedSegments }
+                    return Self.diarizationSpans(from: segments)
                 },
                 cleanup: {
                     diarizer.cleanup()
@@ -219,6 +251,13 @@ final class ModelManager: ObservableObject {
         switch fluidAudioVariant {
         case .parakeetV3:
             version = .v3
+        case .qwen3AsrInt8:
+            // Routed via loadQwen3AsrModel; should never reach here.
+            throw NSError(
+                domain: "GhostPepper.ModelManager",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "Unexpected variant for Parakeet loader"]
+            )
         }
 
         let models = try await AsrModels.downloadAndLoad(version: version) { progress in
@@ -228,8 +267,40 @@ final class ModelManager: ObservableObject {
         }
         downloadProgress = nil
         let manager = AsrManager(config: .default)
-        try await manager.initialize(models: models)
+        try await manager.loadModels(models)
         fluidAudioManager = manager
+    }
+
+    @available(macOS 15, iOS 18, *)
+    private func loadQwen3AsrModel(_ model: SpeechModelDescriptor) async throws {
+        guard let fluidAudioVariant = model.fluidAudioVariant else {
+            throw NSError(
+                domain: "GhostPepper.ModelManager",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "Missing FluidAudio variant for \(model.name)"]
+            )
+        }
+
+        let qwenVariant: Qwen3AsrVariant
+        switch fluidAudioVariant {
+        case .qwen3AsrInt8: qwenVariant = .int8
+        case .parakeetV3:
+            throw NSError(
+                domain: "GhostPepper.ModelManager",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "Unexpected variant for Qwen3-ASR loader"]
+            )
+        }
+
+        let directory = try await Qwen3AsrModels.download(variant: qwenVariant) { progress in
+            Task { @MainActor [weak self] in
+                self?.downloadProgress = progress.fractionCompleted
+            }
+        }
+        downloadProgress = nil
+        let manager = Qwen3AsrManager()
+        try await manager.loadModels(from: directory)
+        qwen3AsrManagerStorage = manager
     }
 
     private func resetLoadedModels() {
@@ -241,6 +312,7 @@ final class ModelManager: ObservableObject {
         whisperKit = nil
         fluidAudioManager = nil
         sortformerModels = nil
+        qwen3AsrManagerStorage = nil
         downloadProgress = nil
     }
 
@@ -263,17 +335,14 @@ final class ModelManager: ObservableObject {
         return models
     }
 
-    private static func diarizationSpans(from segmentsBySpeaker: [[SortformerSegment]]) -> [DiarizationSummary.Span] {
-        segmentsBySpeaker
-            .enumerated()
-            .flatMap { speakerIndex, segments in
-                segments.map { segment in
-                    DiarizationSummary.Span(
-                        speakerID: "Speaker \(speakerIndex)",
-                        startTime: TimeInterval(segment.startTime),
-                        endTime: TimeInterval(segment.endTime)
-                    )
-                }
+    private static func diarizationSpans(from segments: [DiarizerSegment]) -> [DiarizationSummary.Span] {
+        segments
+            .map { segment in
+                DiarizationSummary.Span(
+                    speakerID: "Speaker \(segment.speakerIndex)",
+                    startTime: TimeInterval(segment.startTime),
+                    endTime: TimeInterval(segment.endTime)
+                )
             }
             .sorted { lhs, rhs in
                 if lhs.startTime == rhs.startTime {
@@ -315,6 +384,11 @@ final class ModelManager: ObservableObject {
             switch fluidAudioVariant {
             case .parakeetV3:
                 return AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: .v3), version: .v3)
+            case .qwen3AsrInt8:
+                if #available(macOS 15, iOS 18, *) {
+                    return Qwen3AsrModels.modelsExist(at: Qwen3AsrModels.defaultCacheDirectory(variant: .int8))
+                }
+                return false
             }
         }
     }

@@ -7,6 +7,7 @@ enum SpeechBackendKind: Equatable {
 
 enum FluidAudioModelVariant: Equatable {
     case parakeetV3
+    case qwen3AsrInt8
 }
 
 struct SpeechModelDescriptor: Identifiable, Equatable {
@@ -34,7 +35,9 @@ struct SpeechModelDescriptor: Identifiable, Equatable {
     }
 
     var supportsSpeakerFiltering: Bool {
-        backend == .fluidAudio
+        // Only Parakeet exposes diarization output via the Sortformer pipeline.
+        // Qwen3-ASR is an encoder-decoder and has no per-speaker segmentation.
+        fluidAudioVariant == .parakeetV3
     }
 }
 
@@ -79,16 +82,36 @@ enum SpeechModelCatalog {
         fluidAudioVariant: .parakeetV3
     )
 
-    static let availableModels = [
+    static let qwen3AsrInt8 = SpeechModelDescriptor(
+        name: "fluid_qwen3-asr-0.6b-int8",
+        pickerTitle: "Qwen3-ASR 0.6B",
+        variantName: "int8, 50+ languages",
+        sizeDescription: "~900 MB",
+        backend: .fluidAudio,
+        cachePathComponents: [],
+        fluidAudioVariant: .qwen3AsrInt8
+    )
+
+    /// Models that are always selectable on the current OS.
+    private static let baseModels: [SpeechModelDescriptor] = [
         whisperTiny,
         whisperSmallEnglish,
         whisperSmallMultilingual,
         parakeetV3,
     ]
 
+    static var availableModels: [SpeechModelDescriptor] {
+        if #available(macOS 15, iOS 18, *) {
+            return baseModels + [qwen3AsrInt8]
+        }
+        return baseModels
+    }
+
     static let defaultModelID = whisperSmallEnglish.id
 
-    static let whisperModels = availableModels.filter { $0.backend == .whisperKit }
+    static var whisperModels: [SpeechModelDescriptor] {
+        availableModels.filter { $0.backend == .whisperKit }
+    }
 
     static func model(named name: String) -> SpeechModelDescriptor? {
         availableModels.first { $0.name == name }
