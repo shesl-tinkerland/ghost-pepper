@@ -7,6 +7,10 @@ xcuserdata/
 # Models (large binary files)
 Resources/models/
 
+# Secrets
+.env
+.env.*
+
 # macOS
 .DS_Store
 
